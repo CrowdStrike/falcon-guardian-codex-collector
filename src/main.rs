@@ -5,8 +5,7 @@ mod guardian;
 use std::{env, error::Error, fmt::Display, process::ExitCode, time::Duration};
 
 use clap::{Parser, ValueEnum};
-use guardian::{Function, GuardInput, GuardRequest, GuardResponse, Message, ToolCall};
-use reqwest::Url;
+use guardian::{BaseUrl, Function, GuardInput, GuardRequest, GuardResponse, Message, ToolCall};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -23,7 +22,7 @@ struct Args {
     env = "CS_AIDR_BASE_URL",
     default_value = "https://api.crowdstrike.com/aidr/aiguard"
   )]
-  base_url: Url,
+  base_url: BaseUrl,
   /// Seconds to wait for a verdict, including polling.
   #[arg(long, default_value_t = 30)]
   timeout: u64,
