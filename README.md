@@ -48,7 +48,7 @@ file:
 
 | Flag | Env | Default |
 |---|---|---|
-| `--token` | `CS_AIDR_TOKEN` | required |
+| | `CS_AIDR_TOKEN` | required |
 | `--base-url` | `CS_AIDR_BASE_URL` | `https://api.crowdstrike.com/aidr/aiguard` |
 | `--timeout <secs>` | | `30` |
 | `--failure-mode <open\|closed>` | | `open` |
