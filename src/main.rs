@@ -315,7 +315,7 @@ fn reply(event: &Event, res: &GuardResponse) -> Result<Option<Value>> {
     let summary = res.summary.as_deref().unwrap_or("blocked by policy");
     format!("Falcon Guardian: {summary}")
   };
-  Ok(match event {
+  let mut reply = match event {
     _ if !blocked && !transformed => None,
     // Codex can't rewrite prompts, so a redacted prompt passes through.
     Event::UserPromptSubmit { .. } => blocked.then(|| block(&reason())),
@@ -336,7 +336,14 @@ fn reply(event: &Event, res: &GuardResponse) -> Result<Option<Value>> {
     Event::PostToolUse { .. } if blocked => Some(block(&reason())),
     Event::PostToolUse { .. } => Some(block(&redacted_output(res)?)),
     Event::Unsupported => None,
-  })
+  };
+  if let Some(Value::Object(reply)) = &mut reply
+    && let Some(msg) = res.result.display_message.as_deref()
+    && !msg.is_empty()
+  {
+    reply.insert("systemMessage".into(), msg.into());
+  }
+  Ok(reply)
 }
 
 fn block(reason: &str) -> Value {
@@ -589,7 +596,9 @@ mod tests {
 
   #[test]
   fn redacted_prompt_passes_through() {
-    let res = transformed(&json!([{ "role": "user", "content": "my SSN is <US_SSN>" }]));
+    let mut res = transformed(&json!([{ "role": "user", "content": "my SSN is <US_SSN>" }]));
+    assert_eq!(reply(&prompt(), &res).unwrap(), None);
+    res.result.display_message = Some("Your SSN was redacted.".into());
     assert_eq!(reply(&prompt(), &res).unwrap(), None);
   }
 
@@ -660,5 +669,40 @@ mod tests {
     let res = verdict(json!({ "blocked": false, "transformed": true }));
     assert!(reply(&pre_tool_use(), &res).is_err());
     assert!(reply(&post_tool_use(), &res).is_err());
+  }
+
+  fn acted_on() -> [(Event, GuardResponse); 5] {
+    let call = json!({ "role": "assistant", "content": null, "tool_calls": [{
+      "id": "call_1",
+      "type": "function",
+      "function": { "name": "apply_patch", "arguments": "{}" },
+    }] });
+    let output = json!({ "role": "tool", "tool_call_id": "call_1", "content": "<US_SSN>" });
+    [
+      (prompt(), blocked()),
+      (pre_tool_use(), blocked()),
+      (pre_tool_use(), transformed(&json!([call.clone()]))),
+      (post_tool_use(), blocked()),
+      (post_tool_use(), transformed(&json!([call, output]))),
+    ]
+  }
+
+  #[test]
+  fn display_message_is_shown_to_the_user() {
+    for (event, mut res) in acted_on() {
+      let mut want = reply(&event, &res).unwrap().unwrap();
+      want["systemMessage"] = json!("Blocked by policy X.");
+      res.result.display_message = Some("Blocked by policy X.".into());
+      assert_eq!(reply(&event, &res).unwrap(), Some(want));
+    }
+  }
+
+  #[test]
+  fn empty_display_message_shows_nothing() {
+    for (event, mut res) in acted_on() {
+      let want = reply(&event, &res).unwrap();
+      res.result.display_message = Some(String::new());
+      assert_eq!(reply(&event, &res).unwrap(), want);
+    }
   }
 }
